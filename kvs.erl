@@ -17,10 +17,12 @@ start(N) ->
 %% @doc stop all pids in KVS process group
 %% stop() -> stopped.
 stop() ->
+    LocalFun = fun(X) -> erlang:node(X) == node() end,
+    LocalPids = lists:filter(LocalFun, pg2:get_members(kvs)),
     lists:foreach(fun(Pid) ->
 			  pg2:leave(kvs, Pid),
 			  Pid ! stop
-		  end, pg2:get_members(kvs)),
+		  end, LocalPids),
     stopped.
 
 %% @doc retrieve value for key
