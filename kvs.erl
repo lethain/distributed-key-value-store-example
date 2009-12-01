@@ -70,23 +70,28 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 	    lists:foreach(fun(Pid) ->
 				  Pid ! {self(), retrieve, Sender, Key}
 			  end, pg2:get_members(kvs)),
-	    Reads2 = [{{Sender, Key}, ?KVS_READS} | Reads],
+	    % {?KVS_READS, []} = { RequiredmSuccessfulReadsBeforeReturnToUser, ValuesReturnedByReads}
+	    Reads2 = [{{Sender, Key}, {?KVS_READS, []}} | Reads],
 	    store(Store#kvs_store{pending_reads=Reads2});	    
 	{Sender, retrieve, Client, Key} ->
 	    Sender ! {self(), retrieved, Client, Key, proplists:get_value(Key, Data)},
 	    store(Store);
 	{_Sender, retrieved, Client, Key, Value} ->
-	    Count = proplists:get_value({Client, Key}, Reads),
-	    case Count of
-		undefined ->
-		    store(Store);
-		1 ->
-		    Client ! {self(), got, Value},
+	    case proplists:get_value({Client, Key}, Reads) of
+		{1, Values} ->
+		    Freq = lists:foldr(fun(X, Acc) ->
+					       case proplists:get_value(X, Acc) of
+						   undefined -> [{X, 1} | Acc];
+						   N -> [{X, N+1} | proplists:delete(X, Acc)]
+					       end
+				       end, [], Values),
+		    [{Popular, _} | _ ] = lists:reverse(lists:keysort(2, Freq)),
+		    Client ! {self(), got, Popular},
 		    store(Store#kvs_store{pending_reads=proplists:delete({Key, Value}, Reads)});
-		_ ->
-		    store(Store#kvs_store{pending_reads=[{{Client, Key}, Count-1}, proplists:delete({Client, Key}, Reads)]})
-	    end;
-	
+		{Count, Values} ->
+		    store(Store#kvs_store{pending_reads=[{{Client, Key}, {Count-1, [Value | Values]}}, 
+							  proplists:delete({Client, Key}, Reads)]})
+	    end;	
 	{Sender, set, Key, Value} ->
 	    % client interface for updating values
 	    lists:foreach(fun(Pid) ->
