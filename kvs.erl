@@ -67,8 +67,26 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
     receive 
 	{Sender, get, Key} ->
 	    % client interface for retrieving values
-	    Sender ! {self(), got, proplists:get_value(Key, Data)},
+	    lists:foreach(fun(Pid) ->
+				  Pid ! {self(), retrieve, Sender, Key}
+			  end, pg2:get_members(kvs)),
+	    Reads2 = [{{Sender, Key}, ?KVS_READS} | Reads],
+	    store(Store#kvs_store{pending_reads=Reads2});	    
+	{Sender, retrieve, Client, Key} ->
+	    Sender ! {self(), retrieved, Client, Key, proplists:get_value(Key, Data)},
 	    store(Store);
+	{_Sender, retrieved, Client, Key, Value} ->
+	    Count = proplists:get_value({Client, Key}, Reads),
+	    case Count of
+		undefined ->
+		    store(Store);
+		1 ->
+		    Client ! {self(), got, Value},
+		    store(Store#kvs_store{pending_reads=proplists:delete({Key, Value}, Reads)});
+		_ ->
+		    store(Store#kvs_store{pending_reads=[{{Client, Key}, Count-1}, proplists:delete({Client, Key}, Reads)]})
+	    end;
+	
 	{Sender, set, Key, Value} ->
 	    % client interface for updating values
 	    lists:foreach(fun(Pid) ->
