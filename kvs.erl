@@ -39,7 +39,9 @@ get(Key, Timeout) ->
     Pid ! {self(), get, Key},
     receive
 	{Pid, got, Value} ->
-	    {ok, Value}
+	    {ok, Value};
+	{error, Error} ->
+	    {error, Error}
     after 
 	Timeout ->
 	    {error, timeout}
@@ -56,7 +58,9 @@ set(Key, Val, Timeout) ->
     Pid ! {self(), set, Key, Val},
     receive
 	{Pid, received, {set, Key, Val}} ->
-	    {ok, updated}
+	    {ok, updated};
+	{error, Error} ->
+	    {error, Error}
     after
 	Timeout ->
 	    {error, timeout}
@@ -94,7 +98,7 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 			    pending_reads=proplists:delete({Key, Value}, Reads)});
 		{Count, Values, Timestamp} ->
 		    store(Store#kvs_store{
-			    pending_reads=[{{Client, Key}, {Count-1, [Value | Values], Timestamp}}, 
+			    pending_reads=[{{Client, Key}, {Count-1, [Value | Values], Timestamp}} |
 					   proplists:delete({Client, Key}, Reads)]})
 	    end;	
 	{Sender, set, Key, Value} ->
@@ -120,12 +124,37 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 			    pending_writes=proplists:delete({Key, Value}, Writes)});
 		_ ->
 		    store(Store#kvs_store{
-			    pending_writes=[{{Client, Key}, {Count-1, Timestamp}},
+			    pending_writes=[{{Client, Key}, {Count-1, Timestamp}} |
 					    proplists:delete({Client, Key}, Writes)]})
 	    end;
 	stop ->
 	    ok
+    after
+	?KVS_POLL_PENDING ->
+	    Writes2 = lists:filter(fun filter_writes/1, Writes),
+	    Reads2 = lists:filter(fun filter_reads/1, Reads),
+	    store(Store#kvs_store{pending_writes=Writes2, pending_reads=Reads2})
     end.
+
+filter_writes({{Client, _Key}, {_Count, Ts}}) ->
+    Now = ts(),
+    if Now > Ts + ?KVS_WRITE_TIMEOUT ->
+	    Client ! {error, write_failed},
+	    false;
+       true  ->
+	    true
+    end.
+
+filter_reads({{Client, _Key}, {_Count, _Values, Ts}}) ->
+    Now = ts(),
+    if Now > Ts + ?KVS_READ_TIMEOUT ->
+	    Client ! {error, read_failed},
+	    false;
+       true  ->
+	    true
+    end.
+
+	      
 
 ts() ->
     {Mega, Sec, _} = erlang:now(),
