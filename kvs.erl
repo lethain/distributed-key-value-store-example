@@ -85,7 +85,7 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 	    store(Store);
 	{_Sender, retrieved, Client, Key, Value} ->
 	    case proplists:get_value({Client, Key}, Reads) of
-		{1, Values, _Timestamp} ->
+		{0, Values, _Timestamp} ->
 		    Freq = lists:foldr(fun(X, Acc) ->
 				 case proplists:get_value(X, Acc) of
 				     undefined -> [{X, 1} | Acc];
@@ -118,7 +118,7 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 	    case Count of
 		undefined ->
 		    store(Store);
-		1 ->
+		0 ->
 		    Client ! {self(), received, {set, Key, Value}},
 		    store(Store#kvs_store{
 			    pending_writes=proplists:delete({Key, Value}, Writes)});
