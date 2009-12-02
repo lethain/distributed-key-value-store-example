@@ -127,3 +127,6 @@ store(Store = #kvs_store{data=Data, pending_reads=Reads, pending_writes=Writes})
 	    ok
     end.
 
+ts() ->
+    {Mega, Sec, _} = erlang:now(),
+    (Mega * 1000000) + Sec.
