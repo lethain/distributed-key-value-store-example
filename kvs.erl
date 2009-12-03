@@ -143,6 +143,8 @@ message_retrieve(Store = #kvs_store{data=Data}, Sender, Client, Key) ->
 
 message_retrieved(Store = #kvs_store{pending_reads=Reads}, _Sender, Client, Key, Value) ->
     case proplists:get_value({Client, Key}, Reads) of
+	undefined ->
+	    store(Store);
 	{0, Values, _Timestamp} ->
 	    Freq = lists:foldr(fun(X, Acc) ->
 				       case proplists:get_value(X, Acc) of
