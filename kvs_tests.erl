@@ -5,7 +5,7 @@
 not_running_test() ->
     kvs:stop(),
     {error, not_running} = kvs:get(b),
-    {error, not_running} = kvs:set(c, 100)    
+    {error, not_running} = kvs:set(c, 100).
 
 %% @doc test most basic functionality
 basic_test() ->
