@@ -11,24 +11,17 @@
 %% @doc create N nodes in distributed key-value store
 %% @spec start(integer()) -> started
 start(N) ->
-    pg2:create(kvs),
     lists:foreach(fun(_) ->
-			  Store = #kvs_store{data=[],
-					     pending_reads=[],
-					     pending_writes=[]},
-			  pg2:join(kvs, spawn(kvs_server, store, [Store]))
+		   kvs_server:start_link()
 		  end, lists:seq(0, N)),
     started.
 
 %% @doc stop all pids in KVS process group
 %% stop() -> stopped.
 stop() ->
-    LocalFun = fun(X) -> erlang:node(X) == node() end,
-    LocalPids = lists:filter(LocalFun, pg2:get_members(kvs)),
     lists:foreach(fun(Pid) ->
-			  pg2:leave(kvs, Pid),
-			  Pid ! stop
-		  end, LocalPids),
+			  gen_server:call(Pid, stop)
+		  end, pg2:get_members(kvs)),
     stopped.
 
 %% @doc retrieve value for key
@@ -42,16 +35,7 @@ get(Key) -> get(Key, ?TIMEOUT).
 %%       timeout = {error, timeout}
 get(Key, Timeout) ->
     Pid = pg2:get_closest_pid(kvs),
-    Pid ! {self(), get, Key},
-    receive
-	{Pid, got, Value} ->
-	    {ok, Value};
-	{error, Error} ->
-	    {error, Error}
-    after 
-	Timeout ->
-	    {error, timeout}
-    end.
+    gen_server:call(Pid, {get, Key}, Timeout).
 
 %% @doc update value for key
 %% @spec set(term(), term()) -> {ok, updated} | {error, timeout}
@@ -61,13 +45,4 @@ set(Key, Val) -> set(Key, Val, ?TIMEOUT).
 %% @spec set(term(), term()) -> {ok, updated} | {error, timeout}
 set(Key, Val, Timeout) ->
     Pid = pg2:get_closest_pid(kvs),
-    Pid ! {self(), set, Key, Val},
-    receive
-	{Pid, received, {set, Key, Val}} ->
-	    {ok, updated};
-	{error, Error} ->
-	    {error, Error}
-    after
-	Timeout ->
-	    {error, timeout}
-    end.
+    gen_server:call(Pid, {set, Key, Val}, Timeout).
